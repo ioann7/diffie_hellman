@@ -1,7 +1,10 @@
 import json
 import sys
+import base64
 
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 
 def save_config(config: dict) -> None:
@@ -34,13 +37,14 @@ def create_key(config: dict) -> str:
            f'и получите от него другое число: {your_number}'))
     friend_number = int(input('Введите число вашего собеседника:\n').strip())
     secret_key = (friend_number**secret_number) % second_number
+    secret_key = f'{secret_key}_sEcR3t_k3y'
     return secret_key
 
 
 def input_initial_numbers() -> dict:
     result = {}
     print('Введите 2 начальных числа и отправьте вашему собеседнику:')
-    first_number, second_number = map(int, input().split().strip())
+    first_number, second_number = map(int, input().strip().split())
     result['first_number'] = first_number
     result['second_number'] = second_number
     return result
@@ -49,13 +53,22 @@ def input_initial_numbers() -> dict:
 def main():
     try:
         config = load_config()
-    except IOError:
+    except Exception:
         config = {}
     if not check_config(config):
         config.update(input_initial_numbers())
-        config['key'] = create_key(config)
+        secret_key = create_key(config)
+        config['key'] = secret_key
         save_config(config)
-    fernet = Fernet(config['key'])
+    password = config['key'].encode()
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=password,
+        iterations=390000,
+    )
+    key = base64.urlsafe_b64encode(kdf.derive(password))
+    fernet = Fernet(key)
 
     while True:
         try:
@@ -67,13 +80,13 @@ def main():
                     'Введите строку которую нужно зашифровать:\n'
                 )
                 encrypted_message = fernet.encrypt(your_string.encode())
-                print(encrypted_message)
+                print(encrypted_message.decode())
             elif working_mode == 2:
                 your_string = input(
                     'Введите строку которую нужно расшифровать:\n'
                 )
-                dectrypted_message = fernet.decrypt(your_string).decode()
-                print(dectrypted_message)
+                dectrypted_message = fernet.decrypt(your_string)
+                print(dectrypted_message.decode())
             else:
                 print('Я не понимаю что ввели!!!')
         except KeyboardInterrupt:
